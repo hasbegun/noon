@@ -8,8 +8,8 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
-from ..config import config
-from .dataset import FoodDataset
+from config import config
+from data_process.dataset import FoodDataset
 
 
 def create_data_loaders(
@@ -68,6 +68,7 @@ def create_data_loaders(
             pin_memory=True,
             drop_last=True,
             persistent_workers=num_workers > 0,
+            collate_fn=collate_fn,
         )
 
     # Validation loader
@@ -91,6 +92,7 @@ def create_data_loaders(
             num_workers=num_workers,
             pin_memory=True,
             persistent_workers=num_workers > 0,
+            collate_fn=collate_fn,
         )
 
     # Test loader
@@ -114,6 +116,7 @@ def create_data_loaders(
             num_workers=num_workers,
             pin_memory=True,
             persistent_workers=num_workers > 0,
+            collate_fn=collate_fn,
         )
 
     return loaders

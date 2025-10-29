@@ -175,14 +175,14 @@ with open('data/processed/statistics.json') as f: \
 
 train: ## Train model (single node)
 	@echo "$(BLUE)Training model...$(NC)"
-	@$(CONDA_RUN) python scripts/train.py \
+	@$(CONDA_RUN) python src/train/train.py \
 		--epochs $(EPOCHS) \
 		--batch-size $(BATCH_SIZE) \
 		--device $(DEVICE)
 
 train-quick: ## Quick training (10 epochs for testing)
 	@echo "$(BLUE)Quick training (10 epochs)...$(NC)"
-	@$(CONDA_RUN) python scripts/train.py \
+	@$(CONDA_RUN) python src/train/train.py \
 		--epochs 10 \
 		--batch-size 4 \
 		--device $(DEVICE)

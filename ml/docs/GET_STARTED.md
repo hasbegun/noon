@@ -97,12 +97,22 @@ Change port:
 make serve PORT=8080
 ```
 
+## Performance Notes
+
+The training pipeline has been optimized for speed:
+- **Fast dataset loading**: Initialization completes in seconds (not minutes)
+- **Efficient training**: Lightweight model for fast iteration
+- **MPS acceleration**: Apple Silicon GPU support
+
+See [PERFORMANCE_OPTIMIZATIONS.md](PERFORMANCE_OPTIMIZATIONS.md) for details.
+
 ## What's Next?
 
 1. Read [QUICKSTART.md](QUICKSTART.md) for detailed guide
-2. Read [README.md](README.md) for complete documentation
+2. Read [README.md](../README.md) for complete documentation
 3. Read [CONDA_SETUP.md](CONDA_SETUP.md) for conda details
-4. Run `make help` to see all commands
+4. Read [PERFORMANCE_OPTIMIZATIONS.md](PERFORMANCE_OPTIMIZATIONS.md) for speed tips
+5. Run `make help` to see all commands
 
 ## Quick Reference
 

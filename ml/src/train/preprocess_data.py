@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from loguru import logger
 
 from src.config import config
-from src.data.preprocessing import DataPreprocessor
+from src.data_process.preprocessing import DataPreprocessor
 
 
 def main():

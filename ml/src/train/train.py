@@ -5,17 +5,21 @@ Training script with multi-node distributed support
 import argparse
 import sys
 from pathlib import Path
+import os
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add parent directory to path to allow imports
+current_dir = Path(__file__).parent
+src_dir = current_dir.parent
+project_root = src_dir.parent
+sys.path.insert(0, str(src_dir))
 
 import torch
 from loguru import logger
 
-from src.config import config
-from src.data import create_data_loaders
-from src.models import FoodDetector
-from src.training import Trainer, cleanup_distributed, setup_distributed
+from config import config
+from data_process import create_data_loaders
+from models import FoodDetector
+from training import Trainer, cleanup_distributed, setup_distributed
 
 
 def parse_args():

@@ -9,7 +9,7 @@ import torch
 import torch.distributed as dist
 from loguru import logger
 
-from ..config import config
+from config import config
 
 
 def setup_distributed(

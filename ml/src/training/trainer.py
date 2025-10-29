@@ -13,10 +13,10 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
-from ..config import config
-from ..data import create_data_loaders
-from ..models import FoodDetector
-from .distributed import (all_reduce, barrier, get_rank, get_world_size,
+from config import config
+from data_process import create_data_loaders
+from models import FoodDetector
+from training.distributed import (all_reduce, barrier, get_rank, get_world_size,
                            is_main_process)
 
 
@@ -83,6 +83,7 @@ class Trainer:
 
         # Training state
         self.current_epoch = 0
+        self.total_epochs = config.epochs  # Default, can be overridden in train()
         self.best_val_loss = float("inf")
         self.train_losses = []
         self.val_losses = []
@@ -103,7 +104,7 @@ class Trainer:
         # Progress bar only on main process
         iterator = tqdm(
             self.train_loader,
-            desc=f"Epoch {self.current_epoch + 1}/{config.epochs}",
+            desc=f"Epoch {self.current_epoch + 1}/{self.total_epochs}",
             disable=not is_main_process(self.rank),
         )
 
@@ -187,6 +188,7 @@ class Trainer:
             Training history
         """
         epochs = epochs or config.epochs
+        self.total_epochs = epochs  # Update instance variable for progress bar
         start_time = time.time()
 
         if is_main_process(self.rank):

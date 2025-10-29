@@ -13,7 +13,7 @@ from loguru import logger
 from PIL import Image
 from tqdm import tqdm
 
-from ..config import config
+from config import config
 
 
 class DataPreprocessor:
