@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment (legacy)
+venv/
+env/
+ENV/
+.venv
+
+# Conda
+.tmp/
+*.pid
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Data
+data/processed/*.parquet
+data/processed/*.json
+data/usda/*.db
+data/usda/*.db-journal
+
+# Models
+models/segmentation/*.pt
+models/segmentation/*.pth
+models/pretrained/*.pt
+models/pretrained/*.pth
+
+# Results
+results/
+outputs/
+checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
