@@ -162,11 +162,13 @@ def main():
             output_dir = args.output.parent
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save JSON results
-            json_file = args.output.with_suffix(".json")
+            # Save JSON results with input filename
+            json_filename = f"{args.image.stem}_result.json"
+            json_file = output_dir / json_filename
             with open(json_file, "w") as f:
                 # Remove non-serializable items
                 results_copy = {
+                    "input_image": str(args.image.name),
                     "num_items": results["num_items"],
                     "image_shape": list(results["image_shape"]),
                     "food_items": []
@@ -176,11 +178,16 @@ def main():
                 for item in results.get("food_items", []):
                     item_copy = {
                         "item_id": item["item_id"],
-                        "area_pixels": item["area_pixels"],
-                        "bbox": item["bbox"],  # Already a list
+                        "item_name": item.get("item_name", f"Food Item {item['item_id'] + 1}"),
+                        "area_pixels": int(item["area_pixels"]),
+                        "bbox": list(item["bbox"]) if not isinstance(item["bbox"], list) else item["bbox"],
                         "predicted_iou": float(item.get("predicted_iou", 0.0)),
                         "volume_ml": float(item.get("volume_ml", 0.0)),
+                        "volume_cm3": float(item.get("volume_cm3", 0.0)),
                         "area_cm2": float(item.get("area_cm2", 0.0)),
+                        "estimated_height_cm": float(item.get("estimated_height_cm", 0.0)),
+                        "circularity": float(item.get("circularity", 0.0)),
+                        "compactness": float(item.get("compactness", 0.0)),
                         "confidence": float(item.get("confidence", 0.0)),
                     }
                     results_copy["food_items"].append(item_copy)
