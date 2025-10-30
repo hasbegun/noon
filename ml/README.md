@@ -2,6 +2,10 @@
 
 A modern ML pipeline for detecting food items from images and providing detailed nutrition analysis using SAM2 (Segment Anything Model 2) and USDA FoodData Central.
 
+> 📖 **Documentation**: See [docs/](docs/) for complete guides
+>
+> 🏗️ **Project Structure**: See [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for detailed layout
+
 ## Features
 
 - **Food Detection**: Advanced segmentation using SAM2 for accurate food item detection
