@@ -194,7 +194,7 @@ class Trainer:
         Train the model
 
         Args:
-            epochs: Number of epochs to train
+            epochs: Total number of epochs to train (not additional epochs)
 
         Returns:
             Training history
@@ -203,10 +203,17 @@ class Trainer:
         self.total_epochs = epochs  # Update instance variable for progress bar
         start_time = time.time()
 
-        if is_main_process(self.rank):
-            logger.info(f"Starting training for {epochs} epochs")
+        # Calculate starting epoch (for resume from checkpoint)
+        start_epoch = self.current_epoch + 1 if self.current_epoch > 0 else 0
 
-        for epoch in range(epochs):
+        if is_main_process(self.rank):
+            if start_epoch > 0:
+                logger.info(f"Resuming training from epoch {start_epoch + 1}/{epochs}")
+                logger.info(f"Previous best val loss: {self.best_val_loss:.4f}")
+            else:
+                logger.info(f"Starting training for {epochs} epochs")
+
+        for epoch in range(start_epoch, epochs):
             self.current_epoch = epoch
 
             # Train
@@ -233,15 +240,19 @@ class Trainer:
                     f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
                 )
 
-                # Save checkpoint
+                # Save best model checkpoint
                 if val_loss < self.best_val_loss:
                     self.best_val_loss = val_loss
                     self.save_checkpoint("best_model.pt")
                     logger.info(f"Saved best model (val_loss: {val_loss:.4f})")
 
-                # Save periodic checkpoint
+                # Always save last checkpoint (for resume)
+                self.save_checkpoint("last_checkpoint.pt")
+
+                # Save periodic numbered checkpoint
                 if (epoch + 1) % 10 == 0:
                     self.save_checkpoint(f"checkpoint_epoch_{epoch + 1}.pt")
+                    logger.info(f"Saved checkpoint at epoch {epoch + 1}")
 
             # Synchronize processes
             if self.distributed:
@@ -294,6 +305,9 @@ class Trainer:
 
     def load_checkpoint(self, checkpoint_path: Path):
         """Load model checkpoint"""
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
         logger.info(f"Loading checkpoint: {checkpoint_path}")
 
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -317,4 +331,7 @@ class Trainer:
         if self.scaler and "scaler_state_dict" in checkpoint:
             self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
-        logger.info(f"Checkpoint loaded (epoch {self.current_epoch})")
+        logger.info(f"✓ Checkpoint loaded successfully:")
+        logger.info(f"  - Resuming from epoch {self.current_epoch + 1}")
+        logger.info(f"  - Best val loss so far: {self.best_val_loss:.4f}")
+        logger.info(f"  - Training history: {len(self.train_losses)} epochs")

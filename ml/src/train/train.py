@@ -132,13 +132,35 @@ def main():
             distributed=distributed,
         )
 
-        # Load checkpoint if provided
+        # Check for checkpoint to resume from
+        checkpoint_to_load = None
         if args.checkpoint and args.checkpoint.exists():
-            logger.info(f"Loading checkpoint: {args.checkpoint}")
-            trainer.load_checkpoint(args.checkpoint)
+            checkpoint_to_load = args.checkpoint
+        else:
+            # Auto-detect last checkpoint
+            last_checkpoint = config.segmentation_models_path / "last_checkpoint.pt"
+            if last_checkpoint.exists():
+                if rank == 0:
+                    logger.warning(f"Found existing checkpoint: {last_checkpoint}")
+                    logger.warning("To resume training, use: --checkpoint models/segmentation/last_checkpoint.pt")
+                    logger.warning("To start fresh, delete the checkpoint or use a new model name")
+
+                    # Auto-resume (comment out these lines if you want manual resume only)
+                    response = input("Resume from last checkpoint? [y/N]: ").strip().lower()
+                    if response == 'y':
+                        checkpoint_to_load = last_checkpoint
+
+        # Load checkpoint if found
+        if checkpoint_to_load:
+            trainer.load_checkpoint(checkpoint_to_load)
 
         # Train
-        logger.info(f"Starting training for {args.epochs} epochs")
+        if rank == 0:
+            if checkpoint_to_load:
+                logger.info(f"Continuing training to {args.epochs} total epochs")
+            else:
+                logger.info(f"Starting training for {args.epochs} epochs")
+
         history = trainer.train(epochs=args.epochs)
 
         # Log results
