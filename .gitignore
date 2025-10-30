@@ -1,9 +1,6 @@
-# ML dir
-**/data
-**/models
-ml/visualizations/**
-ml/results.json
-ml/tests/**
+### ML dir
+ml/data/**
+ml/models/**
 
 ###############
 # Miscellaneous
