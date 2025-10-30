@@ -156,8 +156,16 @@ class Trainer:
         total_loss = 0.0
         num_batches = 0
 
+        # Add progress bar for validation
+        iterator = tqdm(
+            self.val_loader,
+            desc=f"Validation {self.current_epoch + 1}/{self.total_epochs}",
+            disable=not is_main_process(self.rank),
+            leave=False,  # Don't leave progress bar after completion
+        )
+
         with torch.no_grad():
-            for batch in self.val_loader:
+            for batch in iterator:
                 images = batch["images"].to(self.device)
                 masks = batch["masks"].to(self.device)
 
@@ -166,6 +174,10 @@ class Trainer:
 
                 total_loss += loss.item()
                 num_batches += 1
+
+                # Update progress bar with current loss
+                if is_main_process(self.rank):
+                    iterator.set_postfix({"val_loss": f"{loss.item():.4f}"})
 
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
 
@@ -198,10 +210,16 @@ class Trainer:
             self.current_epoch = epoch
 
             # Train
+            if is_main_process(self.rank):
+                logger.info(f"Starting Epoch {epoch + 1}/{epochs} - Training...")
+
             train_loss = self.train_epoch()
             self.train_losses.append(train_loss)
 
             # Validate
+            if is_main_process(self.rank):
+                logger.info(f"Epoch {epoch + 1}/{epochs} - Training complete, starting validation...")
+
             val_loss = self.validate()
             self.val_losses.append(val_loss)
 
@@ -211,7 +229,7 @@ class Trainer:
             # Log progress
             if is_main_process(self.rank):
                 logger.info(
-                    f"Epoch {epoch + 1}/{epochs} - "
+                    f"Epoch {epoch + 1}/{epochs} Complete - "
                     f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
                 )
 

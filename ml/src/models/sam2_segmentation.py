@@ -569,7 +569,7 @@ class SAM2Segmentor(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass for training
+        Forward pass for training and validation
 
         Args:
             x: Input images (B, 3, H, W)
@@ -581,8 +581,9 @@ class SAM2Segmentor(nn.Module):
         if hasattr(self, 'use_placeholder') and self.use_placeholder:
             return self.sam2_model(x)
 
-        # Use lightweight head for fast training (10-100x faster than full SAM2)
-        if self.use_lightweight_head and self.training:
+        # Use lightweight head for fast training/validation (10-100x faster than full SAM2)
+        # Only use full SAM2 for final inference (when explicitly needed)
+        if self.use_lightweight_head:
             features = self.lightweight_encoder(x)
             masks = self.lightweight_decoder(features)
             return masks
