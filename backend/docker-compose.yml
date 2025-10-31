@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: innox/noon-api-server:latest
+    container_name: noon-api-server
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount app directory for hot-reload in development
+      - ./app:/app
+      # Mount ML source code for integrated inference
+      - ../ml:/ml:ro
+      # Optional: Mount a directory for persistent data (e.g., SQLite DB)
+      - ./data:/data
+    environment:
+      # Ollama running on host
+      - OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
+      # Llama.cpp running on host
+      - LLAMACPP_API_URL=http://host.docker.internal:8088/v1/chat/completions
+      # ML is now integrated - no separate service needed
+      # Optional: Override other settings
+      - BLOOMFILTER_SIZE=100
+      - BLOOMFILTER_FPR=0.000001
+    extra_hosts:
+      # Allow container to access host services via host.docker.internal
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - noon-network
+
+networks:
+  noon-network:
+    driver: bridge

@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Testing
+tests/test_*.jpg
+tests/boxplt.jpg
+visualizations/
+
+# Data (will be mounted as volume)
+data/
+models/
+
+# Temporary files
+.tmp/
+*.tmp
+*.log
+
+# Jupyter
+*.ipynb
+.ipynb_checkpoints/
+
+# Results
+results.json
+test_food*.json
+debug_masks.sh
+verify_checkpoint.sh
+
+# Environment files (will be set in docker-compose)
+.env
+.env.example

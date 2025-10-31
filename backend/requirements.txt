@@ -1,0 +1,29 @@
+# Core API Dependencies
+anyio==4.11.0
+certifi==2025.8.3
+fastapi==0.117.1
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.10
+sniffio==1.3.1
+starlette==0.48.0
+typing_extensions==4.15.0
+uvicorn==0.37.0
+Pillow==11.3.0
+websockets==15.0.1
+pydantic==2.8.0
+pydantic-settings==2.8.0
+python-multipart
+sqlalchemy
+
+# LLM Dependencies (for backend features)
+langchain
+langchain-openai
+langchain_community
+
+# Utilities
+bloom-filter
+loguru>=0.7.2
+
+# Note: ML dependencies removed - backend now calls ML microservice via HTTP

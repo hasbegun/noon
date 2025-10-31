@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Ollama LLM Service
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: noon2-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   networks:
+  #     - noon2-network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   # Uncomment below for GPU support
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: 1
+  #   #           capabilities: [gpu]
+
+  # ML Inference Microservice
+  ml-service:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: noon2-ml-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - API_HOST=0.0.0.0
+      - API_PORT=8001
+      - DEVICE=cpu  # Change to cuda if GPU available
+    volumes:
+      # Mount model files (if stored locally)
+      - ./ml/models:/app/models
+      # Mount data for testing (optional)
+      - ./ml/data:/app/data
+      # Mount symlinked models if using external storage
+      - /Volumes/lm-data/models:/external/models:ro
+    networks:
+      - noon2-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Backend API Service
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: noon2-backend-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ML_SERVICE_URL=http://ml-service:8001
+      # Ollama runs on host with GPU - connect via host.docker.internal
+      - OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
+      - BLOOMFILTER_SIZE=100
+      - BLOOMFILTER_FPR=0.000001
+    volumes:
+      # Mount backend data if needed
+      - ./backend/data:/app/data
+    extra_hosts:
+      # Allow container to access host services (Ollama)
+      - "host.docker.internal:host-gateway"
+    networks:
+      - noon2-network
+    depends_on:
+      # Only depends on ML service (Ollama runs on host)
+      ml-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+networks:
+  noon2-network:
+    driver: bridge
+
+volumes:
+  ollama-data:
+  ml-models:
+  backend-data:

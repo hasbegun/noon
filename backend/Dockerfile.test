@@ -1,0 +1,26 @@
+# Use the same base image as production for consistency
+FROM python:3.13
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the requirements file and install dependencies first
+# This step is cached by Docker if requirements.txt doesn't change
+COPY requirements.txt requirements.txt
+RUN pip install --upgrade -r requirements.txt
+
+COPY requirements-test.txt requirements-test.txt
+RUN pip install --upgrade -r requirements-test.txt
+
+# Copy the entire application source code and the tests
+# This is the key difference from the production Dockerfile
+COPY . .
+
+ENV PYTHONPATH=/app
+
+WORKDIR /
+
+# The command to execute when the container runs.
+# It will discover and run all tests within the 'tests' directory.
+CMD [ "python", "-m", "unittest", "discover", "-s", "test", "-p", "test_*.py" ]
+
