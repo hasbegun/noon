@@ -55,7 +55,7 @@ class Config(BaseSettings):
     # Model Configuration
     sam2_model_type: str = Field(default="hiera_b+", description="SAM2 model type: hiera_t, hiera_s, hiera_b+, hiera_l")
     sam2_checkpoint: Optional[str] = Field(default=None, description="Path to SAM2 checkpoint")
-    image_size: int = Field(default=1024, description="Input image size for SAM2")
+    image_size: int = Field(default=224, description="Input image size (224 for classification, 1024 for SAM2 segmentation)")
 
     # Data Processing
     train_split: float = Field(default=0.7, description="Training data split ratio")

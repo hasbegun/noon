@@ -239,6 +239,10 @@ class ClassificationTrainer:
                 'cls_loss': f"{cls_loss.item():.4f}",
             })
 
+            # Clear MPS cache periodically to prevent OOM
+            if self.device == "mps" and num_batches % 10 == 0:
+                torch.mps.empty_cache()
+
         # Compute metrics
         metrics = self.train_metrics.compute()
         metrics['loss'] = total_loss / num_batches
@@ -320,6 +324,10 @@ class ClassificationTrainer:
 
             # Update progress bar
             pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+
+            # Clear MPS cache periodically
+            if self.device == "mps" and num_batches % 10 == 0:
+                torch.mps.empty_cache()
 
         # Compute metrics
         metrics = self.val_metrics.compute()
