@@ -20,6 +20,7 @@ from training.classification_metrics import (
     print_classification_metrics,
     print_nutrition_metrics,
 )
+from training.mixup import MixupCutmixAugmentation
 
 
 class ClassificationTrainer:
@@ -40,6 +41,12 @@ class ClassificationTrainer:
         save_dir: Optional[Path] = None,
         include_nutrition: bool = False,
         class_names: Optional[list] = None,
+        use_mixup: bool = False,
+        use_cutmix: bool = False,
+        mixup_alpha: float = 0.2,
+        cutmix_alpha: float = 1.0,
+        warmup_epochs: int = 0,
+        freeze_backbone: bool = False,
     ):
         """
         Initialize classification trainer
@@ -53,32 +60,77 @@ class ClassificationTrainer:
             save_dir: Directory to save checkpoints
             include_nutrition: Whether model predicts nutrition (joint task)
             class_names: List of class names for logging
+            use_mixup: Enable mixup augmentation
+            use_cutmix: Enable cutmix augmentation
+            mixup_alpha: Mixup interpolation strength
+            cutmix_alpha: CutMix interpolation strength
+            warmup_epochs: Number of warmup epochs
+            freeze_backbone: Freeze backbone weights (train classifier only)
         """
         self.device = device or config.device
         self.num_classes = num_classes
         self.include_nutrition = include_nutrition
         self.class_names = class_names
+        self.warmup_epochs = warmup_epochs
+        self.freeze_backbone = freeze_backbone
 
         # Setup model
         self.model = model.to(self.device)
+
+        # Freeze backbone if requested (for two-stage training)
+        if freeze_backbone:
+            logger.info("Freezing backbone weights - training classifier only")
+            for name, param in self.model.named_parameters():
+                if 'backbone' in name:
+                    param.requires_grad = False
+                else:
+                    param.requires_grad = True
 
         # Data loaders
         self.train_loader = train_loader
         self.val_loader = val_loader
 
-        # Setup optimizer
+        # Mixup/CutMix augmentation
+        self.use_mixup = use_mixup
+        self.use_cutmix = use_cutmix
+        if use_mixup or use_cutmix:
+            self.mixup_cutmix = MixupCutmixAugmentation(
+                mixup_alpha=mixup_alpha,
+                cutmix_alpha=cutmix_alpha,
+                mixup_prob=1.0 if use_mixup else 0.0,
+                cutmix_prob=1.0 if use_cutmix else 0.0,
+            )
+            logger.info(f"Mixup/CutMix enabled: mixup={use_mixup} (α={mixup_alpha}), cutmix={use_cutmix} (α={cutmix_alpha})")
+        else:
+            self.mixup_cutmix = None
+
+        # Setup optimizer (only optimize parameters that require grad)
         self.optimizer = optim.AdamW(
-            self.model.parameters(),
+            filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=config.learning_rate,
             weight_decay=config.weight_decay,
         )
 
-        # Setup scheduler - cosine annealing with warmup
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        # Setup scheduler - cosine annealing with optional warmup
+        self.base_scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            T_max=config.epochs,
+            T_max=config.epochs - warmup_epochs,
             eta_min=1e-6,
         )
+
+        # Warmup scheduler
+        if warmup_epochs > 0:
+            self.warmup_scheduler = optim.lr_scheduler.LinearLR(
+                self.optimizer,
+                start_factor=0.1,
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+            logger.info(f"Warmup enabled: {warmup_epochs} epochs")
+        else:
+            self.warmup_scheduler = None
+
+        self.scheduler = self.base_scheduler
 
         # Loss function
         if include_nutrition:
@@ -153,6 +205,12 @@ class ClassificationTrainer:
             images = batch["image"].to(self.device)
             labels = batch["label"].to(self.device)
 
+            # Apply Mixup/CutMix if enabled
+            if self.mixup_cutmix is not None:
+                images, labels_a, labels_b, lam = self.mixup_cutmix(images, labels)
+            else:
+                labels_a, labels_b, lam = labels, labels, 1.0
+
             # Forward pass
             self.optimizer.zero_grad()
 
@@ -168,13 +226,21 @@ class ClassificationTrainer:
                             batch["nutrition"]["mass_g"],
                         ], dim=1).to(self.device)
 
+                        # Note: Mixup/CutMix not applied to nutrition targets (too complex)
                         loss, cls_loss, nutr_loss = self.criterion(
-                            class_logits, nutrition_pred, labels, nutrition_target
+                            class_logits, nutrition_pred, labels_a, nutrition_target
                         )
                     else:
                         class_logits = self.model(images)
-                        loss = self.criterion(class_logits, labels)
-                        cls_loss = loss
+                        # Use mixup criterion if augmentation applied
+                        if self.mixup_cutmix is not None:
+                            cls_loss_a = self.criterion(class_logits, labels_a)
+                            cls_loss_b = self.criterion(class_logits, labels_b)
+                            loss = lam * cls_loss_a + (1 - lam) * cls_loss_b
+                            cls_loss = loss
+                        else:
+                            loss = self.criterion(class_logits, labels)
+                            cls_loss = loss
                         nutr_loss = torch.tensor(0.0)
             else:
                 if self.include_nutrition:
@@ -187,13 +253,21 @@ class ClassificationTrainer:
                         batch["nutrition"]["mass_g"],
                     ], dim=1).to(self.device)
 
+                    # Note: Mixup/CutMix not applied to nutrition targets
                     loss, cls_loss, nutr_loss = self.criterion(
-                        class_logits, nutrition_pred, labels, nutrition_target
+                        class_logits, nutrition_pred, labels_a, nutrition_target
                     )
                 else:
                     class_logits = self.model(images)
-                    loss = self.criterion(class_logits, labels)
-                    cls_loss = loss
+                    # Use mixup criterion if augmentation applied
+                    if self.mixup_cutmix is not None:
+                        cls_loss_a = self.criterion(class_logits, labels_a)
+                        cls_loss_b = self.criterion(class_logits, labels_b)
+                        loss = lam * cls_loss_a + (1 - lam) * cls_loss_b
+                        cls_loss = loss
+                    else:
+                        loss = self.criterion(class_logits, labels)
+                        cls_loss = loss
                     nutr_loss = torch.tensor(0.0)
 
             # Backward pass
@@ -205,9 +279,9 @@ class ClassificationTrainer:
                 loss.backward()
                 self.optimizer.step()
 
-            # Update metrics
+            # Update metrics (metrics will handle CPU move)
             with torch.no_grad():
-                self.train_metrics.update(class_logits.detach(), labels)
+                self.train_metrics.update(class_logits, labels)
 
                 if self.include_nutrition and "nutrition" in batch:
                     nutrition_dict = {
@@ -239,9 +313,16 @@ class ClassificationTrainer:
                 'cls_loss': f"{cls_loss.item():.4f}",
             })
 
-            # Clear MPS cache periodically to prevent OOM
-            if self.device == "mps" and num_batches % 10 == 0:
-                torch.mps.empty_cache()
+            # Aggressive memory cleanup for MPS
+            if self.device == "mps":
+                # Delete intermediate tensors
+                del images, labels, class_logits, loss
+                if self.include_nutrition:
+                    del nutrition_pred, nutrition_target
+
+                # Clear cache more frequently
+                if num_batches % 5 == 0:
+                    torch.mps.empty_cache()
 
         # Compute metrics
         metrics = self.train_metrics.compute()
@@ -325,9 +406,16 @@ class ClassificationTrainer:
             # Update progress bar
             pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
-            # Clear MPS cache periodically
-            if self.device == "mps" and num_batches % 10 == 0:
-                torch.mps.empty_cache()
+            # Aggressive memory cleanup for validation
+            if self.device == "mps":
+                # Delete tensors
+                del images, labels, class_logits, loss
+                if self.include_nutrition:
+                    del nutrition_pred, nutrition_target
+
+                # Clear cache every batch in validation (less performance impact)
+                if num_batches % 3 == 0:
+                    torch.mps.empty_cache()
 
         # Compute metrics
         metrics = self.val_metrics.compute()
@@ -366,9 +454,15 @@ class ClassificationTrainer:
             else:
                 val_metrics = {}
 
-            # Update learning rate
-            self.scheduler.step()
-            current_lr = self.optimizer.param_groups[0]['lr']
+            # Update learning rate (with warmup handling)
+            if self.warmup_scheduler is not None and epoch < self.warmup_epochs:
+                # During warmup
+                self.warmup_scheduler.step()
+                current_lr = self.optimizer.param_groups[0]['lr']
+            else:
+                # After warmup, use main scheduler
+                self.scheduler.step()
+                current_lr = self.optimizer.param_groups[0]['lr']
 
             # Log metrics
             epoch_time = time.time() - epoch_start

@@ -106,6 +106,42 @@ def parse_args():
         default=4,
         help="Number of data loading workers",
     )
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        default=224,
+        help="Input image size (224 for B0, 300 for B3, 380 for B4)",
+    )
+    parser.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=0,
+        help="Number of warmup epochs",
+    )
+
+    # Data augmentation arguments
+    parser.add_argument(
+        "--mixup",
+        action="store_true",
+        help="Enable mixup data augmentation",
+    )
+    parser.add_argument(
+        "--cutmix",
+        action="store_true",
+        help="Enable cutmix data augmentation",
+    )
+    parser.add_argument(
+        "--mixup-alpha",
+        type=float,
+        default=0.2,
+        help="Mixup interpolation strength (beta distribution parameter)",
+    )
+    parser.add_argument(
+        "--cutmix-alpha",
+        type=float,
+        default=1.0,
+        help="CutMix interpolation strength (beta distribution parameter)",
+    )
 
     # Development mode
     parser.add_argument(
@@ -234,8 +270,19 @@ def main():
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Learning rate: {args.lr}")
+    logger.info(f"Image size: {args.image_size}")
     logger.info(f"Device: {args.device}")
+    if args.mixup or args.cutmix:
+        logger.info(f"Augmentation: mixup={args.mixup}, cutmix={args.cutmix}")
+    if args.warmup_epochs > 0:
+        logger.info(f"Warmup epochs: {args.warmup_epochs}")
+    if args.freeze_backbone:
+        logger.info("Freeze backbone: True")
     logger.info("="*60)
+
+    # Set image size in config
+    original_image_size = config.image_size
+    config.image_size = args.image_size
 
     # Validation
     if args.with_nutrition and args.dataset != "nutrition5k":
@@ -298,10 +345,17 @@ def main():
         save_dir=save_dir,
         include_nutrition=args.with_nutrition,
         class_names=label_manager.categories,
+        use_mixup=args.mixup,
+        use_cutmix=args.cutmix,
+        mixup_alpha=args.mixup_alpha,
+        cutmix_alpha=args.cutmix_alpha,
+        warmup_epochs=args.warmup_epochs,
+        freeze_backbone=args.freeze_backbone,
     )
 
     # Restore original config
     config.learning_rate = original_lr
+    config.image_size = original_image_size
 
     # Load checkpoint if specified
     if args.checkpoint and args.checkpoint.exists():

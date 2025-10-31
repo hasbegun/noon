@@ -39,13 +39,13 @@ class ClassificationMetrics:
             predictions: Model predictions (B,) or logits (B, num_classes)
             targets: Ground truth labels (B,)
         """
+        # Move to CPU first to save GPU memory
+        predictions = predictions.detach().cpu()
+        targets = targets.detach().cpu()
+
         # Convert logits to predictions if needed
         if predictions.dim() == 2:
             predictions = torch.argmax(predictions, dim=1)
-
-        # Move to CPU for counting
-        predictions = predictions.cpu()
-        targets = targets.cpu()
 
         # Overall accuracy
         self.correct += (predictions == targets).sum().item()
