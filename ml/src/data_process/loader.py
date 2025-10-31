@@ -21,6 +21,8 @@ def create_data_loaders(
     distributed: bool = False,
     rank: int = 0,
     world_size: int = 1,
+    dev_mode: bool = False,
+    dev_samples: int = 100,
 ) -> Dict[str, DataLoader]:
     """
     Create data loaders for training, validation, and testing
@@ -34,6 +36,8 @@ def create_data_loaders(
         distributed: Whether to use distributed sampling
         rank: Process rank for distributed training
         world_size: Total number of processes
+        dev_mode: If True, use small subset of data for quick iteration
+        dev_samples: Number of samples to use in dev mode
 
     Returns:
         Dictionary of data loaders
@@ -46,6 +50,15 @@ def create_data_loaders(
     # Training loader
     if train_file and train_file.exists():
         train_dataset = FoodDataset(train_file, mode="train")
+
+        # Dev mode: use subset of data
+        if dev_mode and len(train_dataset) > dev_samples:
+            from torch.utils.data import Subset
+            import numpy as np
+            indices = np.random.choice(len(train_dataset), dev_samples, replace=False)
+            train_dataset = Subset(train_dataset, indices)
+            from loguru import logger
+            logger.info(f"🔧 DEV MODE: Using {dev_samples} training samples (out of full dataset)")
 
         if distributed:
             train_sampler = DistributedSampler(
@@ -74,6 +87,16 @@ def create_data_loaders(
     # Validation loader
     if val_file and val_file.exists():
         val_dataset = FoodDataset(val_file, mode="val")
+
+        # Dev mode: use subset of data
+        if dev_mode and len(val_dataset) > dev_samples // 2:
+            from torch.utils.data import Subset
+            import numpy as np
+            val_dev_samples = dev_samples // 2  # Use half for validation
+            indices = np.random.choice(len(val_dataset), val_dev_samples, replace=False)
+            val_dataset = Subset(val_dataset, indices)
+            from loguru import logger
+            logger.info(f"🔧 DEV MODE: Using {val_dev_samples} validation samples")
 
         if distributed:
             val_sampler = DistributedSampler(

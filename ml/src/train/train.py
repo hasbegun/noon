@@ -40,6 +40,10 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=config.learning_rate, help="Learning rate")
     parser.add_argument("--num-workers", type=int, default=config.num_workers, help="Data loading workers")
 
+    # Development mode
+    parser.add_argument("--dev-mode", action="store_true", help="Development mode: use small data subset for quick iteration")
+    parser.add_argument("--dev-samples", type=int, default=100, help="Number of samples in dev mode")
+
     # Model arguments
     parser.add_argument(
         "--model-type",
@@ -98,6 +102,14 @@ def main():
 
     try:
         # Create data loaders
+        if args.dev_mode:
+            logger.warning("=" * 60)
+            logger.warning("🔧 DEVELOPMENT MODE ENABLED")
+            logger.warning(f"   Using only {args.dev_samples} training samples")
+            logger.warning(f"   Using only {args.dev_samples // 2} validation samples")
+            logger.warning("   For full training, remove --dev-mode flag")
+            logger.warning("=" * 60)
+
         logger.info("Creating data loaders")
         data_loaders = create_data_loaders(
             train_file=args.data_dir / "train.parquet",
@@ -107,6 +119,8 @@ def main():
             distributed=distributed,
             rank=rank,
             world_size=world_size,
+            dev_mode=args.dev_mode,
+            dev_samples=args.dev_samples,
         )
 
         if "train" not in data_loaders:

@@ -3,7 +3,7 @@ Training logic for food detection model
 """
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -18,6 +18,8 @@ from data_process import create_data_loaders
 from models import FoodDetector
 from training.distributed import (all_reduce, barrier, get_rank, get_world_size,
                            is_main_process)
+from training.losses import CombinedSegmentationLoss
+from training.metrics import SegmentationMetrics, print_metrics
 
 
 class Trainer:
@@ -74,8 +76,12 @@ class Trainer:
             T_max=config.epochs,
         )
 
-        # Loss function
-        self.criterion = nn.BCEWithLogitsLoss()
+        # Loss function - use combined loss to prevent collapse to all zeros
+        self.criterion = CombinedSegmentationLoss(
+            bce_weight=0.4,
+            dice_weight=0.4,
+            focal_weight=0.2,
+        )
 
         # Mixed precision training
         self.use_amp = config.mixed_precision and self.device == "cuda"
@@ -85,8 +91,15 @@ class Trainer:
         self.current_epoch = 0
         self.total_epochs = config.epochs  # Default, can be overridden in train()
         self.best_val_loss = float("inf")
+        self.best_f1 = 0.0
         self.train_losses = []
         self.val_losses = []
+        self.train_f1_scores = []
+        self.val_f1_scores = []
+
+        # Metrics
+        self.train_metrics = SegmentationMetrics(threshold=0.5)
+        self.val_metrics = SegmentationMetrics(threshold=0.5)
 
         # Checkpoint directory
         self.checkpoint_dir = config.segmentation_models_path
@@ -95,11 +108,14 @@ class Trainer:
         logger.info(f"Trainer initialized on {self.device}")
         logger.info(f"Distributed: {distributed}, Rank: {self.rank}/{self.world_size}")
 
-    def train_epoch(self) -> float:
-        """Train for one epoch"""
+    def train_epoch(self) -> Tuple[float, Dict[str, float]]:
+        """Train for one epoch, returns (loss, metrics)"""
         self.model.train()
         total_loss = 0.0
         num_batches = 0
+
+        # Reset metrics
+        self.train_metrics.reset()
 
         # Progress bar only on main process
         iterator = tqdm(
@@ -136,6 +152,23 @@ class Trainer:
             total_loss += loss.item()
             num_batches += 1
 
+            # Monitor for prediction collapse (all zeros) and update metrics
+            with torch.no_grad():
+                pred_probs = torch.sigmoid(outputs)
+                pred_mean = pred_probs.mean().item()
+                target_mean = masks.unsqueeze(1).float().mean().item()
+
+                # Warn if predictions are collapsing to zeros
+                if pred_mean < 0.01 and num_batches % 50 == 0:
+                    logger.warning(
+                        f"⚠️  Predictions may be collapsing! "
+                        f"Batch {num_batches}: pred_mean={pred_mean:.6f}, "
+                        f"target_mean={target_mean:.4f}"
+                    )
+
+                # Update metrics
+                self.train_metrics.update(outputs, masks)
+
             # Update progress bar
             if is_main_process(self.rank):
                 iterator.set_postfix({"loss": f"{loss.item():.4f}"})
@@ -148,13 +181,19 @@ class Trainer:
             all_reduce(loss_tensor)
             avg_loss = (loss_tensor / self.world_size).item()
 
-        return avg_loss
+        # Compute metrics
+        metrics = self.train_metrics.compute()
 
-    def validate(self) -> float:
-        """Validate the model"""
+        return avg_loss, metrics
+
+    def validate(self) -> Tuple[float, Dict[str, float]]:
+        """Validate the model, returns (loss, metrics)"""
         self.model.eval()
         total_loss = 0.0
         num_batches = 0
+
+        # Reset metrics
+        self.val_metrics.reset()
 
         # Add progress bar for validation
         iterator = tqdm(
@@ -175,9 +214,16 @@ class Trainer:
                 total_loss += loss.item()
                 num_batches += 1
 
+                # Monitor validation predictions and update metrics
+                pred_probs = torch.sigmoid(outputs)
+                pred_mean = pred_probs.mean().item()
+
+                # Update metrics
+                self.val_metrics.update(outputs, masks)
+
                 # Update progress bar with current loss
                 if is_main_process(self.rank):
-                    iterator.set_postfix({"val_loss": f"{loss.item():.4f}"})
+                    iterator.set_postfix({"val_loss": f"{loss.item():.4f}", "pred_mean": f"{pred_mean:.4f}"})
 
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
 
@@ -187,7 +233,10 @@ class Trainer:
             all_reduce(loss_tensor)
             avg_loss = (loss_tensor / self.world_size).item()
 
-        return avg_loss
+        # Compute metrics
+        metrics = self.val_metrics.compute()
+
+        return avg_loss, metrics
 
     def train(self, epochs: Optional[int] = None) -> Dict:
         """
@@ -220,15 +269,17 @@ class Trainer:
             if is_main_process(self.rank):
                 logger.info(f"Starting Epoch {epoch + 1}/{epochs} - Training...")
 
-            train_loss = self.train_epoch()
+            train_loss, train_metrics = self.train_epoch()
             self.train_losses.append(train_loss)
+            self.train_f1_scores.append(train_metrics['f1'])
 
             # Validate
             if is_main_process(self.rank):
                 logger.info(f"Epoch {epoch + 1}/{epochs} - Training complete, starting validation...")
 
-            val_loss = self.validate()
+            val_loss, val_metrics = self.validate()
             self.val_losses.append(val_loss)
+            self.val_f1_scores.append(val_metrics['f1'])
 
             # Update scheduler
             self.scheduler.step()
@@ -237,14 +288,23 @@ class Trainer:
             if is_main_process(self.rank):
                 logger.info(
                     f"Epoch {epoch + 1}/{epochs} Complete - "
-                    f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+                    f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f} | "
+                    f"Train F1: {train_metrics['f1']:.4f}, Val F1: {val_metrics['f1']:.4f}"
                 )
 
-                # Save best model checkpoint
+                # Print detailed metrics
+                print_metrics(train_metrics, prefix="Train")
+                print_metrics(val_metrics, prefix="Val")
+
+                # Save best model checkpoint (based on F1 score)
+                if val_metrics['f1'] > self.best_f1:
+                    self.best_f1 = val_metrics['f1']
+                    self.save_checkpoint("best_model.pt")
+                    logger.info(f"✓ Saved best model (F1: {val_metrics['f1']:.4f}, IoU: {val_metrics['iou']:.4f})")
+
+                # Also save if val loss improved
                 if val_loss < self.best_val_loss:
                     self.best_val_loss = val_loss
-                    self.save_checkpoint("best_model.pt")
-                    logger.info(f"Saved best model (val_loss: {val_loss:.4f})")
 
                 # Always save last checkpoint (for resume)
                 self.save_checkpoint("last_checkpoint.pt")
