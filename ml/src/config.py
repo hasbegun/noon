@@ -37,6 +37,10 @@ class Config(BaseSettings):
     def segmentation_models_path(self) -> Path:
         return self.models_root / "segmentation"
 
+    @property
+    def recognition_models_path(self) -> Path:
+        return self.models_root / "recognition"
+
     # Training Configuration
     batch_size: int = Field(default=8, description="Training batch size")
     num_workers: int = Field(default=4, description="Number of data loading workers")
@@ -51,7 +55,7 @@ class Config(BaseSettings):
     # Model Configuration
     sam2_model_type: str = Field(default="hiera_b+", description="SAM2 model type: hiera_t, hiera_s, hiera_b+, hiera_l")
     sam2_checkpoint: Optional[str] = Field(default=None, description="Path to SAM2 checkpoint")
-    image_size: int = Field(default=1024, description="Input image size for SAM2")
+    image_size: int = Field(default=224, description="Input image size (224 for classification, 1024 for SAM2 segmentation)")
 
     # Data Processing
     train_split: float = Field(default=0.7, description="Training data split ratio")
@@ -101,6 +105,7 @@ class Config(BaseSettings):
         self.processed_data_path.mkdir(parents=True, exist_ok=True)
         self.pretrained_models_path.mkdir(parents=True, exist_ok=True)
         self.segmentation_models_path.mkdir(parents=True, exist_ok=True)
+        self.recognition_models_path.mkdir(parents=True, exist_ok=True)
 
         if self.log_dir:
             self.log_dir.mkdir(parents=True, exist_ok=True)

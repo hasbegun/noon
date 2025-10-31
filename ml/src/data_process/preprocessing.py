@@ -95,10 +95,17 @@ class DataPreprocessor:
                 if dish_dir.exists():
                     for img_file in dish_dir.glob("*.png"):
                         if self._validate_image(img_file):
+                            # For Nutrition5k, use a generic class or try to infer from metadata
+                            # Since this dataset focuses on nutrition, we use 'mixed_dish' as category
+                            food_class = row.get("dish_type", "mixed_dish")
+                            if pd.isna(food_class) or food_class == "":
+                                food_class = "mixed_dish"
+
                             data.append({
                                 "image_path": str(img_file.absolute()),
                                 "dataset": "nutrition5k",
                                 "dish_id": dish_id,
+                                "food_class": food_class,
                                 "calories": row.get("total_calories"),
                                 "mass_g": row.get("total_mass"),
                                 "protein_g": row.get("total_protein"),
