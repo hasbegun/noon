@@ -181,8 +181,7 @@ class FoodClassificationDataset(Dataset):
             return A.Compose([
                 # Resize with some variation
                 A.RandomResizedCrop(
-                    height=config.image_size,
-                    width=config.image_size,
+                    size=(config.image_size, config.image_size),
                     scale=(0.8, 1.0),
                     ratio=(0.9, 1.1),
                     p=1.0
