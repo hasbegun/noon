@@ -159,7 +159,9 @@ class Trainer:
                 target_mean = masks.unsqueeze(1).float().mean().item()
 
                 # Warn if predictions are collapsing to zeros
-                if pred_mean < 0.01 and num_batches % 50 == 0:
+                # Only warn if targets have positive values but predictions are near zero
+                # (Don't warn when both are zero - that's correct behavior!)
+                if pred_mean < 0.01 and target_mean > 0.01 and num_batches % 50 == 0:
                     logger.warning(
                         f"⚠️  Predictions may be collapsing! "
                         f"Batch {num_batches}: pred_mean={pred_mean:.6f}, "

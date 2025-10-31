@@ -47,8 +47,12 @@ class FocalLoss(nn.Module):
     """
     Focal Loss to focus on hard examples
     Helps with class imbalance (many background pixels, few foreground)
+
+    alpha: Weight for positive class (higher = more focus on positive class)
+           Default 0.75 gives 3x more weight to food pixels vs background
+    gamma: Focusing parameter (higher = more focus on hard examples)
     """
-    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
+    def __init__(self, alpha=0.75, gamma=2.0, reduction='mean'):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -74,8 +78,12 @@ class FocalLoss(nn.Module):
         # Calculate pt (probability of correct class)
         pt = torch.exp(-bce_loss)
 
-        # Calculate focal loss
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
+        # Apply alpha weighting: alpha for positive class, (1-alpha) for negative class
+        # This gives more weight to the minority class (food pixels)
+        alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+
+        # Calculate focal loss with proper alpha weighting
+        focal_loss = alpha_t * (1 - pt) ** self.gamma * bce_loss
 
         if self.reduction == 'mean':
             return focal_loss.mean()

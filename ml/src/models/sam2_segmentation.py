@@ -173,6 +173,56 @@ class SAM2Segmentor(nn.Module):
             nn.Conv2d(32, 1, 1),  # Final 1x1 conv for segmentation
         ).to(self.device)
 
+        # CRITICAL FIX: Initialize model weights properly to prevent all-zero predictions
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """
+        Initialize network weights to prevent prediction collapse to all zeros.
+
+        Key fix: Set final layer bias to encourage some positive predictions
+        even with severe class imbalance.
+        """
+        for m in self.lightweight_encoder.modules():
+            if isinstance(m, nn.Conv2d):
+                # Kaiming initialization (good for ReLU networks)
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        for m in self.lightweight_decoder.modules():
+            if isinstance(m, (nn.ConvTranspose2d, nn.Conv2d)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        # CRITICAL: Initialize final conv layer bias to positive value
+        # This counteracts class imbalance and encourages positive predictions
+        # Formula: bias = log(prior / (1 - prior))
+        # Assuming ~5% of pixels are food (adjust based on your dataset)
+        final_conv = None
+        for m in reversed(list(self.lightweight_decoder.modules())):
+            if isinstance(m, nn.Conv2d):
+                final_conv = m
+                break
+
+        if final_conv is not None and final_conv.bias is not None:
+            # Set bias based on expected positive class ratio
+            # prior = 0.05 means ~5% food pixels → bias = log(0.05/0.95) ≈ -2.94
+            # We use prior = 0.1 to be more aggressive → bias = log(0.1/0.9) ≈ -2.2
+            prior_positive = 0.1  # Assume 10% of pixels are food
+            bias_init = np.log(prior_positive / (1.0 - prior_positive))
+            nn.init.constant_(final_conv.bias, bias_init)
+            logger.info(f"✓ Initialized final layer bias to {bias_init:.4f} (prior={prior_positive:.2%})")
+        else:
+            logger.warning("⚠️  Could not find final conv layer to initialize bias")
+
     def _create_placeholder_model(self):
         """Create a placeholder model for development when SAM2 is not available"""
         class PlaceholderSAM2(nn.Module):
