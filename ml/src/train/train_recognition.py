@@ -185,6 +185,14 @@ def parse_args():
         help="Device to use",
     )
 
+    # Reproducibility
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducibility (important for ensemble training)",
+    )
+
     return parser.parse_args()
 
 
@@ -282,6 +290,19 @@ def create_data_loaders(args, label_manager):
 def main():
     """Main training function"""
     args = parse_args()
+
+    # Set random seed for reproducibility
+    if args.seed is not None:
+        import random
+        import numpy as np
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        np.random.seed(args.seed)
+        random.seed(args.seed)
+        # Make CUDNN deterministic (may reduce performance)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        logger.info(f"Random seed set to: {args.seed}")
 
     # Setup logging
     logger.info("="*60)
