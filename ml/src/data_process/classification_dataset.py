@@ -44,7 +44,11 @@ class FoodClassificationDataset(Dataset):
             mode: 'train', 'val', or 'test'
             include_nutrition: Include nutrition data (for Nutrition5k)
         """
-        self.df = pd.read_parquet(data_file)
+        # Load parquet and ensure file is closed
+        with open(data_file, 'rb') as f:
+            self.df = pd.read_parquet(f)
+        # File is now definitely closed
+
         self.mode = mode
         self.include_nutrition = include_nutrition
         self.transform = transform or self._get_default_transform(mode)
@@ -107,6 +111,9 @@ class FoodClassificationDataset(Dataset):
                 return self._create_dummy_sample()
 
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+            # Force copy to release any file handles
+            image = np.array(image, copy=True)
 
             # Get class label
             class_name = row["food_class"]

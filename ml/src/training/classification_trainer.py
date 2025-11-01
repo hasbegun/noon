@@ -324,6 +324,11 @@ class ClassificationTrainer:
                 if num_batches % 5 == 0:
                     torch.mps.empty_cache()
 
+                # Force garbage collection periodically to prevent file descriptor leaks
+                if num_batches % 20 == 0:
+                    import gc
+                    gc.collect()
+
         # Compute metrics
         metrics = self.train_metrics.compute()
         metrics['loss'] = total_loss / num_batches

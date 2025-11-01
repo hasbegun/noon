@@ -19,7 +19,9 @@ Usage:
     python src/train/train_recognition.py --dataset food-101 --dev-mode --epochs 5
 """
 import argparse
+import platform
 import sys
+import time
 from pathlib import Path
 
 # Add parent directory to path
@@ -36,6 +38,11 @@ from data_process.classification_dataset import FoodClassificationDataset, colla
 from data_process.food_labels import FoodLabelManager
 from models import FoodRecognitionModel, FoodRecognitionWithNutrition
 from training.classification_trainer import ClassificationTrainer
+
+# Fix file descriptor issues on macOS
+if platform.system() == 'Darwin':  # macOS
+    torch.multiprocessing.set_sharing_strategy('file_system')
+    logger.info("macOS detected: Set multiprocessing strategy to 'file_system'")
 
 
 def parse_args():
@@ -233,24 +240,40 @@ def create_data_loaders(args, label_manager):
     if args.with_nutrition and 'nutrition_samples' in train_stats:
         logger.info(f"Samples with nutrition: {train_stats['nutrition_samples']}")
 
+    # Fix num_workers for macOS to prevent "too many open files" error
+    is_macos = platform.system() == 'Darwin'
+    num_workers = 0 if is_macos else min(args.num_workers, 2)
+
+    if is_macos and args.num_workers > 0:
+        logger.warning("="*60)
+        logger.warning("⚠️  macOS DETECTED - REDUCING NUM_WORKERS")
+        logger.warning(f"   Requested: {args.num_workers} workers")
+        logger.warning(f"   Using: {num_workers} workers (prevents file descriptor leak)")
+        logger.warning(f"   This avoids 'Too many open files' error on macOS")
+        logger.warning("="*60)
+
+    logger.info(f"DataLoader workers: {num_workers}")
+
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
+        num_workers=num_workers,
         pin_memory=True if args.device in ["cuda", "mps"] else False,
         collate_fn=collate_fn,
         drop_last=True,  # Drop last incomplete batch for stable training
+        persistent_workers=False,  # Don't keep workers alive between epochs
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
+        num_workers=num_workers,
         pin_memory=True if args.device in ["cuda", "mps"] else False,
         collate_fn=collate_fn,
+        persistent_workers=False,  # Don't keep workers alive
     )
 
     return train_loader, val_loader, train_dataset.label_manager
@@ -357,7 +380,43 @@ def main():
     config.learning_rate = original_lr
     config.image_size = original_image_size
 
-    # Load checkpoint if specified
+    # Auto-resume logic: check for existing checkpoint
+    if args.checkpoint is None:
+        last_checkpoint = save_dir / "last_checkpoint.pt"
+        if last_checkpoint.exists():
+            logger.warning("="*60)
+            logger.warning("📁 FOUND EXISTING CHECKPOINT")
+            logger.warning(f"   Path: {last_checkpoint}")
+
+            # Load to check epoch
+            import torch as torch_check
+            try:
+                ckpt_info = torch_check.load(last_checkpoint, map_location='cpu')
+                last_epoch = ckpt_info.get('epoch', -1)
+                best_acc = ckpt_info.get('best_val_acc', 0.0)
+                logger.warning(f"   Last epoch: {last_epoch + 1}")
+                logger.warning(f"   Best accuracy: {best_acc:.4f}")
+                logger.warning("")
+                logger.warning("   Options:")
+                logger.warning("   1. Resume training (automatically in 10 seconds)")
+                logger.warning("   2. Press Ctrl+C to cancel and start fresh")
+                logger.warning("="*60)
+
+                # Wait for user input
+                time.sleep(10)
+                args.checkpoint = last_checkpoint
+                logger.info(f"✓ Auto-resuming from: {last_checkpoint}")
+
+            except KeyboardInterrupt:
+                logger.info("❌ Cancelled auto-resume. Starting fresh training.")
+                logger.info("   (Existing checkpoint will be overwritten)")
+                time.sleep(2)
+            except Exception as e:
+                logger.warning(f"⚠️  Could not load checkpoint info: {e}")
+                logger.warning("   Starting fresh training")
+                time.sleep(2)
+
+    # Load checkpoint if specified or auto-resumed
     if args.checkpoint and args.checkpoint.exists():
         logger.info(f"Loading checkpoint: {args.checkpoint}")
         trainer.load_checkpoint(args.checkpoint)

@@ -1,6 +1,17 @@
 #!/bin/bash
 # Safe training script for MPS (Apple Silicon) with memory management
 
+# Increase file descriptor limit (macOS)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "Detected macOS - Setting file descriptor limits"
+    ulimit -n 4096
+    echo "File descriptor limit: $(ulimit -n)"
+    echo ""
+fi
+
+# Set PyTorch multiprocessing strategy
+export PYTORCH_MULTIPROCESSING_STRATEGY=file_system
+
 # Set MPS memory management
 export PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0
 
